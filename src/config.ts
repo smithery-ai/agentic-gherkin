@@ -105,7 +105,9 @@ export function parseCliArgs(args: string[]): {
       return value;
     };
 
-    if (arg === "--config" || arg === "-c") {
+    if (arg === "--") {
+      continue;
+    } else if (arg === "--config" || arg === "-c") {
       configFile = next();
     } else if (arg === "--provider") {
       overrides.provider = next() as ProviderName;

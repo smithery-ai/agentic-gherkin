@@ -3,10 +3,15 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveConfig } from "../src/config.js";
+import { parseCliArgs, resolveConfig } from "../src/config.js";
 import { runFeatureExecutor, selectFeatureExecutor } from "../src/feature-executors.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+{
+  const parsed = parseCliArgs(["--", "--features", "tests/features/agentic-gherkin-runner.feature"]);
+  assert.equal(parsed.overrides.features, "tests/features/agentic-gherkin-runner.feature");
+}
 
 {
   const config = resolveConfig({
