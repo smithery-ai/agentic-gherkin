@@ -71,6 +71,14 @@ export type MockProviderOptions = {
   }>;
 };
 
+export type FeatureExecutorConfig = {
+  name?: string;
+  features: string | string[];
+  command: string | string[];
+  cwd?: string;
+  env?: Record<string, string>;
+};
+
 export type AgenticGherkinConfig = {
   cwd?: string;
   features?: string | string[];
@@ -83,6 +91,7 @@ export type AgenticGherkinConfig = {
   contracts?: string[];
   rules?: string[];
   forbiddenCommands?: string[];
+  featureExecutors?: FeatureExecutorConfig[];
   promptIntro?: string;
   buildPrompt?: (request: {
     feature: string;
@@ -122,6 +131,7 @@ export type ResolvedAgenticGherkinConfig = Required<
     | "contracts"
     | "rules"
     | "forbiddenCommands"
+    | "featureExecutors"
     | "promptIntro"
     | "providerOptions"
   >

@@ -63,6 +63,7 @@ export function resolveConfig(
     contracts: overrides.contracts ?? config.contracts ?? [],
     rules: overrides.rules ?? config.rules ?? [],
     forbiddenCommands: overrides.forbiddenCommands ?? config.forbiddenCommands ?? [],
+    featureExecutors: overrides.featureExecutors ?? config.featureExecutors ?? [],
     promptIntro:
       overrides.promptIntro ??
       config.promptIntro ??
@@ -104,7 +105,9 @@ export function parseCliArgs(args: string[]): {
       return value;
     };
 
-    if (arg === "--config" || arg === "-c") {
+    if (arg === "--") {
+      continue;
+    } else if (arg === "--config" || arg === "-c") {
       configFile = next();
     } else if (arg === "--provider") {
       overrides.provider = next() as ProviderName;
