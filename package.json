@@ -5,12 +5,12 @@
   "type": "module",
   "description": "Agentic Gherkin acceptance runner for Codex and Claude SDK-backed evaluators.",
   "bin": {
-    "agentic-gherkin": "dist/cli.js"
+    "agentic-gherkin": "dist/src/cli.js"
   },
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
     }
   },
   "files": [
