@@ -32,6 +32,23 @@ export default {
 };
 ```
 
+Feature files that need a deterministic real-app walkthrough can be routed to a local executor instead of the agent evaluator:
+
+```js
+export default {
+  features: "features",
+  featureExecutors: [
+    {
+      name: "dynamic-mcp-real-e2e",
+      features: "features/dynamic-mcp-add.feature",
+      command: ["node", "scripts/feature-e2e/dynamic-mcp-add.mjs"],
+    },
+  ],
+};
+```
+
+When `--features features/dynamic-mcp-add.feature` is selected, Agentic Gherkin runs the configured command. Other feature selections still use the configured provider.
+
 Run:
 
 ```sh
