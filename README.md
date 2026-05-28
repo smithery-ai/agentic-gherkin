@@ -5,7 +5,7 @@ Agentic Gherkin runs `.feature` files through Cucumber and delegates each scenar
 ## Install
 
 ```sh
-pnpm add -D git+ssh://git@github.com:smithery-ai/agentic-gherkin.git
+pnpm add -D git+https://github.com/smithery-ai/agentic-gherkin.git
 ```
 
 ## Use
