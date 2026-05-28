@@ -32,22 +32,22 @@ export default {
 };
 ```
 
-Feature files that need a deterministic real-app walkthrough can be routed to a local executor instead of the agent evaluator:
+Feature files that need deterministic real-app execution can be routed to native Cucumber step definitions instead of the agent evaluator:
 
 ```js
 export default {
   features: "features",
-  featureExecutors: [
+  cucumberSupport: [
     {
       name: "dynamic-mcp-real-e2e",
       features: "features/dynamic-mcp-add.feature",
-      command: ["node", "scripts/feature-e2e/dynamic-mcp-add.mjs"],
+      importPaths: ["features/support/dynamic-mcp.steps.mjs"],
     },
   ],
 };
 ```
 
-When `--features features/dynamic-mcp-add.feature` is selected, Agentic Gherkin runs the configured command. Other feature selections still use the configured provider.
+When `--features features/dynamic-mcp-add.feature` is selected, Agentic Gherkin runs the feature with the configured Cucumber support. Other feature selections still use the configured provider.
 
 Run:
 

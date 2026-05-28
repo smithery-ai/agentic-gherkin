@@ -20,7 +20,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "clean": "rm -rf dist .context",
-    "features": "tsx tests/features.test.ts && tsx tests/feature-executors.test.ts",
+    "features": "tsx tests/features.test.ts && tsx tests/cucumber-support.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit",
     "prepare": "tsc -p tsconfig.json",
     "test": "pnpm lint && pnpm features"

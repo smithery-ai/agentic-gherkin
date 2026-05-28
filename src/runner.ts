@@ -17,6 +17,7 @@ import { agenticReportSchema, parseAgenticReport, type AgenticReport, type Featu
 import { createEvaluator } from "./providers/index.js";
 import type {
   AgenticGherkinConfig,
+  CucumberSupportConfig,
   ResolvedAgenticGherkinConfig,
   RunSummary,
   ScenarioDescriptor,
@@ -27,13 +28,19 @@ import { resolveConfig } from "./config.js";
 export async function runAgenticGherkin(configInput: AgenticGherkinConfig = {}): Promise<RunSummary> {
   assertSupportedNode();
   const config = resolveConfig(configInput);
-  const evaluator = createEvaluator(config);
 
   await rm(config.outputDir, { recursive: true, force: true });
   await mkdir(config.outputDir, { recursive: true });
 
   const scenarios = await readFeatureScenarios(config);
   assertUniqueScenarios(scenarios);
+
+  const cucumberSupport = selectCucumberSupport(config);
+  if (cucumberSupport !== undefined) {
+    return runCucumberSupport(config, scenarios, cucumberSupport);
+  }
+
+  const evaluator = createEvaluator(config);
 
   const batch = config.evaluationMode === "batch" ? await evaluateBatch(config, evaluator, scenarios) : undefined;
   const cucumberExitCode = await runCucumber(config, evaluator, batch);
@@ -82,6 +89,38 @@ export async function runAgenticGherkin(configInput: AgenticGherkinConfig = {}):
   if (!summary.passed) {
     const issues = report.blockingIssues.map((issue) => `- ${issue.scenario}: ${issue.reason}`).join("\n");
     throw new Error(`Agentic Gherkin failed.\nReport: ${config.reportFile}\n${issues}`);
+  }
+
+  return summary;
+}
+
+async function runCucumberSupport(
+  config: ResolvedAgenticGherkinConfig,
+  scenarios: ScenarioDescriptor[],
+  supportConfig: CucumberSupportConfig,
+): Promise<RunSummary> {
+  const cucumberExitCode = await runNativeCucumber(config, supportConfig);
+  const files = reportFiles(config);
+  const summaryFile = path.join(config.outputDir, "summary.md");
+  const report = reportFromCucumberSupport(scenarios, cucumberExitCode, supportConfig);
+
+  agenticReportSchema.parse(report);
+  await writeFile(config.reportFile, JSON.stringify(report, null, 2) + "\n", "utf8");
+  await writeFile(summaryFile, renderSummary(report, files), "utf8");
+
+  const summary = {
+    passed: cucumberExitCode === 0 && report.passed,
+    reportFile: config.reportFile,
+    summaryFile,
+    htmlReportFile: files.htmlReportFile,
+    junitReportFile: files.junitReportFile,
+    eventLogFile: config.eventLogFile,
+    report,
+  };
+
+  if (!summary.passed) {
+    const issues = report.blockingIssues.map((issue) => `- ${issue.scenario}: ${issue.reason}`).join("\n");
+    throw new Error(`Agentic Gherkin Cucumber support failed.\nReport: ${config.reportFile}\n${issues}`);
   }
 
   return summary;
@@ -348,6 +387,62 @@ async function runCucumber(
   }
 }
 
+async function runNativeCucumber(
+  config: ResolvedAgenticGherkinConfig,
+  supportConfig: CucumberSupportConfig,
+) {
+  const eventLog = createWriteStream(config.eventLogFile);
+  const files = reportFiles(config);
+
+  try {
+    const result = await runCucumberApi(
+      {
+        sources: cucumberSourceOptions(config),
+        support: {
+          requireModules: supportConfig.requireModules ?? [],
+          requirePaths: supportConfig.requirePaths ?? [],
+          importPaths: supportConfig.importPaths ?? [],
+          loaders: supportConfig.loaders ?? [],
+        },
+        runtime: {
+          dryRun: false,
+          failFast: false,
+          filterStacktraces: true,
+          parallel: 0,
+          retry: 0,
+          retryTagFilter: "",
+          strict: true,
+          worldParameters: {},
+        },
+        formats: {
+          stdout: "progress",
+          files: {
+            [files.htmlReportFile]: "html",
+            [files.cucumberJsonFile]: "json",
+            [files.junitReportFile]: "junit",
+            [files.messageReportFile]: "message",
+          },
+          publish: false,
+          options: {},
+        },
+      },
+      {
+        cwd: config.cwd,
+        stdout: tee(process.stdout, eventLog),
+        stderr: tee(process.stderr, eventLog),
+        env: {
+          ...process.env,
+          CUCUMBER_PUBLISH_QUIET: "true",
+        },
+      },
+    );
+
+    return result.success ? 0 : 1;
+  } finally {
+    eventLog.end();
+  }
+}
+
 function buildSupportCodeLibrary(
   config: ResolvedAgenticGherkinConfig,
   evaluator: ScenarioEvaluator,
@@ -500,6 +595,88 @@ function reportFiles(config: ResolvedAgenticGherkinConfig) {
     messageReportFile: path.join(config.outputDir, "messages.ndjson"),
     eventLogFile: config.eventLogFile,
   };
+}
+
+function selectCucumberSupport(config: ResolvedAgenticGherkinConfig): CucumberSupportConfig | undefined {
+  if (config.cucumberSupport.length === 0) {
+    return undefined;
+  }
+
+  const selectedFeatures = normalizeFeatureSet(config.cwd, config.features);
+  const matchingSupport = config.cucumberSupport.filter((supportConfig) =>
+    sameFeatureSet(selectedFeatures, normalizeFeatureSet(config.cwd, supportConfig.features)),
+  );
+
+  if (matchingSupport.length > 1) {
+    throw new Error(
+      `Multiple Cucumber support configs match ${selectedFeatures.join(", ")}: ${matchingSupport
+        .map((supportConfig) => supportConfig.name ?? supportConfig.features)
+        .join(", ")}`,
+    );
+  }
+
+  const supportConfig = matchingSupport[0];
+  if (supportConfig === undefined) {
+    return undefined;
+  }
+
+  const supportFiles = [
+    ...(supportConfig.importPaths ?? []),
+    ...(supportConfig.requirePaths ?? []),
+  ];
+  if (supportFiles.length === 0) {
+    throw new Error(
+      `Cucumber support config ${supportConfig.name ?? selectedFeatures.join(", ")} must include importPaths or requirePaths.`,
+    );
+  }
+
+  return supportConfig;
+}
+
+function reportFromCucumberSupport(
+  scenarios: ScenarioDescriptor[],
+  cucumberExitCode: number,
+  supportConfig: CucumberSupportConfig,
+): AgenticReport {
+  const supportName = supportConfig.name ?? "project Cucumber support";
+  const passed = cucumberExitCode === 0;
+  const featureResults = scenarios.map(({ feature, scenario }) => ({
+    feature,
+    scenario,
+    status: passed ? ("pass" as const) : ("fail" as const),
+    evidence: passed
+      ? `Executed by ${supportName}.`
+      : `Cucumber execution failed under ${supportName}. See Cucumber HTML/JUnit reports.`,
+  }));
+
+  return {
+    passed,
+    summary: passed
+      ? `${featureResults.length}/${featureResults.length} Cucumber scenarios passed through ${supportName}.`
+      : `Cucumber support execution failed for ${supportName}.`,
+    featureResults,
+    blockingIssues: passed
+      ? []
+      : scenarios.map(({ scenario }) => ({
+          scenario,
+          reason: "Cucumber support execution failed.",
+          evidence: "See the generated Cucumber reports for failing step details.",
+        })),
+  };
+}
+
+function normalizeFeatureSet(cwd: string, features: string | string[]) {
+  return toArray(features)
+    .map((feature) => normalizeFeaturePath(cwd, feature))
+    .sort();
+}
+
+function normalizeFeaturePath(cwd: string, feature: string) {
+  return path.relative(cwd, path.resolve(cwd, feature)).split(path.sep).join("/");
+}
+
+function sameFeatureSet(left: string[], right: string[]) {
+  return left.length === right.length && left.every((feature, index) => feature === right[index]);
 }
 
 function assertUniqueScenarios(scenarios: ScenarioDescriptor[]) {

@@ -63,7 +63,7 @@ export function resolveConfig(
     contracts: overrides.contracts ?? config.contracts ?? [],
     rules: overrides.rules ?? config.rules ?? [],
     forbiddenCommands: overrides.forbiddenCommands ?? config.forbiddenCommands ?? [],
-    featureExecutors: overrides.featureExecutors ?? config.featureExecutors ?? [],
+    cucumberSupport: overrides.cucumberSupport ?? config.cucumberSupport ?? [],
     promptIntro:
       overrides.promptIntro ??
       config.promptIntro ??
