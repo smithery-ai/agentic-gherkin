@@ -1,6 +1,5 @@
 export { runAgenticGherkin } from "./runner.js";
 export { loadConfig, resolveConfig } from "./config.js";
-export { runFeatureExecutor, selectFeatureExecutor } from "./feature-executors.js";
 export {
   agenticReportJsonSchema,
   agenticReportSchema,
@@ -19,7 +18,7 @@ export type {
   AgenticGherkinConfig,
   ClaudeProviderOptions,
   CodexProviderOptions,
-  FeatureExecutorConfig,
+  CucumberSupportConfig,
   MockProviderOptions,
   ProviderName,
   RunSummary,

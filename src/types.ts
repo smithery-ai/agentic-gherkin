@@ -71,12 +71,14 @@ export type MockProviderOptions = {
   }>;
 };
 
-export type FeatureExecutorConfig = {
+export type CucumberSupportConfig = {
   name?: string;
   features: string | string[];
-  command: string | string[];
-  cwd?: string;
-  env?: Record<string, string>;
+  importPaths?: string[];
+  requirePaths?: string[];
+  requireModules?: string[];
+  loaders?: string[];
+  tagExpression?: string;
 };
 
 export type AgenticGherkinConfig = {
@@ -91,7 +93,7 @@ export type AgenticGherkinConfig = {
   contracts?: string[];
   rules?: string[];
   forbiddenCommands?: string[];
-  featureExecutors?: FeatureExecutorConfig[];
+  cucumberSupport?: CucumberSupportConfig[];
   promptIntro?: string;
   buildPrompt?: (request: {
     feature: string;
@@ -131,7 +133,7 @@ export type ResolvedAgenticGherkinConfig = Required<
     | "contracts"
     | "rules"
     | "forbiddenCommands"
-    | "featureExecutors"
+    | "cucumberSupport"
     | "promptIntro"
     | "providerOptions"
   >
