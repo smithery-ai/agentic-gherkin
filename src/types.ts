@@ -78,6 +78,7 @@ export type CucumberSupportConfig = {
   requirePaths?: string[];
   requireModules?: string[];
   loaders?: string[];
+  tagExpression?: string;
 };
 
 export type AgenticGherkinConfig = {

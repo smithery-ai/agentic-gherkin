@@ -28,14 +28,14 @@ import { resolveConfig } from "./config.js";
 export async function runAgenticGherkin(configInput: AgenticGherkinConfig = {}): Promise<RunSummary> {
   assertSupportedNode();
   const config = resolveConfig(configInput);
+  const cucumberSupport = selectCucumberSupport(config);
 
   await rm(config.outputDir, { recursive: true, force: true });
   await mkdir(config.outputDir, { recursive: true });
 
-  const scenarios = await readFeatureScenarios(config);
+  const scenarios = await readFeatureScenarios(config, cucumberSupport);
   assertUniqueScenarios(scenarios);
 
-  const cucumberSupport = selectCucumberSupport(config);
   if (cucumberSupport !== undefined) {
     return runCucumberSupport(config, scenarios, cucumberSupport);
   }
@@ -135,13 +135,16 @@ function assertSupportedNode() {
   }
 }
 
-async function readFeatureScenarios(config: ResolvedAgenticGherkinConfig): Promise<ScenarioDescriptor[]> {
+async function readFeatureScenarios(
+  config: ResolvedAgenticGherkinConfig,
+  supportConfig?: CucumberSupportConfig,
+): Promise<ScenarioDescriptor[]> {
   const featurePaths = await readFeaturePaths(config);
   if (featurePaths.length === 0) {
     throw new Error(`No BDD feature files found in ${toArray(config.features).join(", ")}`);
   }
 
-  const sources = await loadSources(cucumberSourceOptions(config), {
+  const sources = await loadSources(cucumberSourceOptions(config, supportConfig), {
     cwd: config.cwd,
   });
 
@@ -221,12 +224,12 @@ async function readFeatureDir(cwd: string, dir: string): Promise<string[]> {
   return files;
 }
 
-function cucumberSourceOptions(config: ResolvedAgenticGherkinConfig) {
+function cucumberSourceOptions(config: ResolvedAgenticGherkinConfig, supportConfig?: CucumberSupportConfig) {
   return {
     defaultDialect: "en",
     paths: toArray(config.features),
     names: [],
-    tagExpression: "",
+    tagExpression: supportConfig?.tagExpression ?? "",
     order: "defined" as const,
   };
 }
@@ -397,7 +400,7 @@ async function runNativeCucumber(
   try {
     const result = await runCucumberApi(
       {
-        sources: cucumberSourceOptions(config),
+        sources: cucumberSourceOptions(config, supportConfig),
         support: {
           requireModules: supportConfig.requireModules ?? [],
           requirePaths: supportConfig.requirePaths ?? [],

@@ -42,12 +42,13 @@ export default {
       name: "dynamic-mcp-real-e2e",
       features: "features/dynamic-mcp-add.feature",
       importPaths: ["features/support/dynamic-mcp.steps.mjs"],
+      tagExpression: "@real-e2e",
     },
   ],
 };
 ```
 
-When `--features features/dynamic-mcp-add.feature` is selected, Agentic Gherkin runs the feature with the configured Cucumber support. Other feature selections still use the configured provider.
+When `--features features/dynamic-mcp-add.feature` is selected, Agentic Gherkin runs the matching scenarios with the configured Cucumber support. Other feature selections still use the configured provider.
 
 Run:
 
