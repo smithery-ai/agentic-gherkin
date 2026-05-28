@@ -11,9 +11,9 @@ import {
 } from "@cucumber/cucumber";
 import { loadSources, runCucumber as runCucumberApi } from "@cucumber/cucumber/api";
 import { toArray } from "./config.js";
-import { buildScenarioPrompt } from "./prompt.js";
+import { buildBatchPrompt, buildScenarioPrompt } from "./prompt.js";
 import { buildAggregateReport, renderSummary, scenarioKey, validateCoverage } from "./report.js";
-import { agenticReportSchema, parseAgenticReport } from "./schema.js";
+import { agenticReportSchema, parseAgenticReport, type AgenticReport, type FeatureResult } from "./schema.js";
 import { createEvaluator } from "./providers/index.js";
 import type {
   AgenticGherkinConfig,
@@ -35,7 +35,8 @@ export async function runAgenticGherkin(configInput: AgenticGherkinConfig = {}):
   const scenarios = await readFeatureScenarios(config);
   assertUniqueScenarios(scenarios);
 
-  const cucumberExitCode = await runCucumber(config, evaluator);
+  const batch = config.evaluationMode === "batch" ? await evaluateBatch(config, evaluator, scenarios) : undefined;
+  const cucumberExitCode = await runCucumber(config, evaluator, batch);
   const scenarioRoot = path.join(config.outputDir, "scenarios");
   const report = await buildAggregateReport(scenarios, scenarioRoot);
   agenticReportSchema.parse(report);
@@ -191,9 +192,116 @@ function cucumberSourceOptions(config: ResolvedAgenticGherkinConfig) {
   };
 }
 
-async function runCucumber(config: ResolvedAgenticGherkinConfig, evaluator: ScenarioEvaluator) {
+type BatchEvaluation = {
+  rawLogFile: string;
+  reportsByScenario: Map<string, AgenticReport>;
+};
+
+async function evaluateBatch(
+  config: ResolvedAgenticGherkinConfig,
+  evaluator: ScenarioEvaluator,
+  scenarios: ScenarioDescriptor[],
+): Promise<BatchEvaluation> {
+  if (evaluator.evaluateBatch === undefined) {
+    throw new Error(`Provider "${evaluator.name}" does not support batch evaluation.`);
+  }
+
+  const batchDir = path.join(config.outputDir, "batch");
+  await mkdir(batchDir, { recursive: true });
+  const rawLogFile = path.join(batchDir, "raw.jsonl");
+  const promptFile = path.join(batchDir, "prompt.md");
+  const reportFile = path.join(batchDir, "report.json");
+  const featureSources = await readFeatureSources(config);
+  const prompt = await buildBatchPrompt(config, {
+    scenarios,
+    featureSources,
+  });
+
+  await writeFile(promptFile, prompt, "utf8");
+
+  const rawLog = createWriteStream(rawLogFile);
+  const log = {
+    write(event: unknown) {
+      rawLog.write(`${JSON.stringify({ time: new Date().toISOString(), event })}\n`);
+    },
+  };
+
+  try {
+    const report = parseAgenticReport(
+      await evaluator.evaluateBatch({
+        cwd: config.cwd,
+        scenarios,
+        featureSources,
+        prompt,
+        timeoutMs: Math.max(1, config.timeoutMs - 1000),
+        log,
+      }),
+    );
+    agenticReportSchema.parse(report);
+    const coverageErrors = validateCoverage(scenarios, report.featureResults);
+    if (coverageErrors.length > 0) {
+      throw new Error(
+        `Agentic Gherkin batch evaluation did not cover the scenario set exactly once:\n${coverageErrors
+          .map((error) => `- ${error}`)
+          .join("\n")}\nReport: ${reportFile}`,
+      );
+    }
+
+    await writeFile(reportFile, JSON.stringify(report, null, 2) + "\n", "utf8");
+
+    return {
+      rawLogFile,
+      reportsByScenario: new Map(
+        report.featureResults.map((result) => [
+          scenarioKey(result),
+          scenarioReportFromBatch(report, result),
+        ]),
+      ),
+    };
+  } finally {
+    rawLog.end();
+  }
+}
+
+async function readFeatureSources(config: ResolvedAgenticGherkinConfig): Promise<Record<string, string>> {
+  const featurePaths = await readFeaturePaths(config);
+  const entries = await Promise.all(
+    featurePaths.map(async (featurePath) => [
+      normalizeUri(featurePath),
+      await readFile(path.resolve(config.cwd, featurePath), "utf8"),
+    ]),
+  );
+
+  return Object.fromEntries(entries);
+}
+
+function scenarioReportFromBatch(report: AgenticReport, result: FeatureResult): AgenticReport {
+  const blockingIssues = report.blockingIssues.filter((issue) => issue.scenario === result.scenario);
+  const passed = result.status === "pass";
+  return {
+    passed,
+    summary: `${result.scenario}: ${result.status}`,
+    featureResults: [{ ...result }],
+    blockingIssues:
+      passed || blockingIssues.length > 0
+        ? blockingIssues
+        : [
+            {
+              scenario: result.scenario,
+              reason: result.evidence,
+              evidence: result.evidence,
+            },
+          ],
+  };
+}
+
+async function runCucumber(
+  config: ResolvedAgenticGherkinConfig,
+  evaluator: ScenarioEvaluator,
+  batch?: BatchEvaluation,
+) {
   const eventLog = createWriteStream(config.eventLogFile);
-  const support = buildSupportCodeLibrary(config, evaluator);
+  const support = buildSupportCodeLibrary(config, evaluator, batch);
   const files = reportFiles(config);
 
   try {
@@ -240,7 +348,11 @@ async function runCucumber(config: ResolvedAgenticGherkinConfig, evaluator: Scen
   }
 }
 
-function buildSupportCodeLibrary(config: ResolvedAgenticGherkinConfig, evaluator: ScenarioEvaluator) {
+function buildSupportCodeLibrary(
+  config: ResolvedAgenticGherkinConfig,
+  evaluator: ScenarioEvaluator,
+  batch?: BatchEvaluation,
+) {
   supportCodeLibraryBuilder.reset(config.cwd, randomUUID, {
     requireModules: [],
     requirePaths: [],
@@ -278,39 +390,62 @@ function buildSupportCodeLibrary(config: ResolvedAgenticGherkinConfig, evaluator
     await mkdir(scenarioDir, { recursive: true });
     await writeFile(promptFile, prompt, "utf8");
 
-    const rawLog = createWriteStream(scenarioRawLogFile);
-    const log = {
-      write(event: unknown) {
-        rawLog.write(`${JSON.stringify({ time: new Date().toISOString(), event })}\n`);
-      },
-    };
-
-    try {
-      const report = await evaluator.evaluate({
-        cwd: config.cwd,
-        feature,
-        scenario,
-        path: pickle.uri,
-        line,
-        featureSource,
-        prompt,
-        timeoutMs: Math.max(1, config.timeoutMs - 1000),
-        log,
-      });
-      const parsedReport = parseAgenticReport(report);
-      const result = validateScenarioReport(parsedReport, { feature, scenario });
-      await writeFile(scenarioReportFile, JSON.stringify(parsedReport, null, 2) + "\n", "utf8");
-      this.agenticGherkinResult = {
-        feature,
-        scenario,
-        result,
-        report: parsedReport,
-        reportFile: scenarioReportFile,
-        rawLogFile: scenarioRawLogFile,
+    let parsedReport: AgenticReport;
+    if (batch !== undefined) {
+      const report = batch.reportsByScenario.get(scenarioKey({ feature, scenario }));
+      if (report === undefined) {
+        throw new Error(`Batch evaluator did not produce a report for ${feature} / ${scenario}.`);
+      }
+      parsedReport = report;
+      await writeFile(
+        scenarioRawLogFile,
+        `${JSON.stringify({
+          time: new Date().toISOString(),
+          event: {
+            provider: evaluator.name,
+            mode: "batch",
+            rawLogFile: batch.rawLogFile,
+          },
+        })}\n`,
+        "utf8",
+      );
+    } else {
+      const rawLog = createWriteStream(scenarioRawLogFile);
+      const log = {
+        write(event: unknown) {
+          rawLog.write(`${JSON.stringify({ time: new Date().toISOString(), event })}\n`);
+        },
       };
-    } finally {
-      rawLog.end();
+
+      try {
+        parsedReport = parseAgenticReport(
+          await evaluator.evaluate({
+            cwd: config.cwd,
+            feature,
+            scenario,
+            path: pickle.uri,
+            line,
+            featureSource,
+            prompt,
+            timeoutMs: Math.max(1, config.timeoutMs - 1000),
+            log,
+          }),
+        );
+      } finally {
+        rawLog.end();
+      }
     }
+
+    const result = validateScenarioReport(parsedReport, { feature, scenario });
+    await writeFile(scenarioReportFile, JSON.stringify(parsedReport, null, 2) + "\n", "utf8");
+    this.agenticGherkinResult = {
+      feature,
+      scenario,
+      result,
+      report: parsedReport,
+      reportFile: scenarioReportFile,
+      rawLogFile: scenarioRawLogFile,
+    };
 
     const world = this as {
       attach?: (data: string, mediaType: string) => Promise<void>;

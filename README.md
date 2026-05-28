@@ -1,6 +1,6 @@
 # Agentic Gherkin
 
-Agentic Gherkin runs `.feature` files through Cucumber and delegates each scenario to an SDK-backed coding agent. It is intended for internal `git+ssh` installation rather than npm publishing.
+Agentic Gherkin runs `.feature` files through Cucumber and delegates acceptance evaluation to an SDK-backed coding agent. It is intended for internal `git+` installation rather than npm publishing.
 
 ## Install
 
@@ -18,6 +18,7 @@ export default {
   contracts: ["docs/specs", "docs/adr", "docs/testing.md"],
   outputDir: ".context/agentic-gherkin",
   provider: process.env.AGENTIC_GHERKIN_PROVIDER ?? "codex",
+  evaluationMode: "batch",
   providerOptions: {
     codex: {
       model: process.env.AGENTIC_GHERKIN_CODEX_MODEL ?? "gpt-5.4-mini",
@@ -36,6 +37,7 @@ Run:
 ```sh
 pnpm agentic-gherkin --config agentic-gherkin.config.mjs
 pnpm agentic-gherkin --provider claude
+pnpm agentic-gherkin --evaluation-mode scenario
 ```
 
 Reports are written to the configured output directory:
@@ -47,6 +49,9 @@ Reports are written to the configured output directory:
 - `messages.ndjson`: raw Cucumber messages
 - `events.jsonl`: runner events
 - `scenarios/**/raw.jsonl`: per-scenario provider stream/log output
+- `batch/raw.jsonl`: provider stream/log output when `evaluationMode` is `batch`
+
+`evaluationMode: "batch"` is the default. It performs one SDK-backed agent evaluation for the whole feature set, then projects the result back through Cucumber so HTML/JUnit/per-scenario reports remain readable. Use `scenario` mode when you explicitly want one agent session per scenario.
 
 ## Providers
 

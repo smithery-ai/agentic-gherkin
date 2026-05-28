@@ -21,9 +21,19 @@ export type ScenarioEvaluationRequest = ScenarioDescriptor & {
   log: ProviderLogWriter;
 };
 
+export type BatchEvaluationRequest = {
+  cwd: string;
+  scenarios: ScenarioDescriptor[];
+  featureSources: Record<string, string>;
+  prompt: string;
+  timeoutMs: number;
+  log: ProviderLogWriter;
+};
+
 export type ScenarioEvaluator = {
   name: string;
   evaluate: (request: ScenarioEvaluationRequest) => Promise<AgenticReport>;
+  evaluateBatch?: (request: BatchEvaluationRequest) => Promise<AgenticReport>;
 };
 
 export type CodexProviderOptions = {
@@ -68,6 +78,7 @@ export type AgenticGherkinConfig = {
   reportFile?: string;
   eventLogFile?: string;
   provider?: ProviderName;
+  evaluationMode?: "batch" | "scenario";
   timeoutMs?: number;
   contracts?: string[];
   rules?: string[];
@@ -79,6 +90,13 @@ export type AgenticGherkinConfig = {
     uri: string;
     line: number;
     featureSource: string;
+    contracts: string[];
+    rules: string[];
+    forbiddenCommands: string[];
+  }) => string | Promise<string>;
+  buildBatchPrompt?: (request: {
+    scenarios: ScenarioDescriptor[];
+    featureSources: Record<string, string>;
     contracts: string[];
     rules: string[];
     forbiddenCommands: string[];
@@ -99,6 +117,7 @@ export type ResolvedAgenticGherkinConfig = Required<
     | "reportFile"
     | "eventLogFile"
     | "provider"
+    | "evaluationMode"
     | "timeoutMs"
     | "contracts"
     | "rules"
@@ -108,6 +127,7 @@ export type ResolvedAgenticGherkinConfig = Required<
   >
 > & {
   buildPrompt?: AgenticGherkinConfig["buildPrompt"];
+  buildBatchPrompt?: AgenticGherkinConfig["buildBatchPrompt"];
 };
 
 export type RunSummary = {

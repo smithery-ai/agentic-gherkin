@@ -31,6 +31,11 @@ export function resolveConfig(
     config.provider ??
     process.env.AGENTIC_GHERKIN_PROVIDER ??
     "codex") as ProviderName;
+  const evaluationMode =
+    overrides.evaluationMode ??
+    config.evaluationMode ??
+    (process.env.AGENTIC_GHERKIN_EVALUATION_MODE as "batch" | "scenario" | undefined) ??
+    "batch";
   const timeoutMs = Number(
     overrides.timeoutMs ??
       config.timeoutMs ??
@@ -53,6 +58,7 @@ export function resolveConfig(
       process.env.AGENTIC_GHERKIN_EVENT_LOG ??
       path.join(outputDir, "events.jsonl"),
     provider,
+    evaluationMode,
     timeoutMs,
     contracts: overrides.contracts ?? config.contracts ?? [],
     rules: overrides.rules ?? config.rules ?? [],
@@ -62,6 +68,7 @@ export function resolveConfig(
       config.promptIntro ??
       "You are the required BDD feature acceptance tester for this repository.",
     buildPrompt: overrides.buildPrompt ?? config.buildPrompt,
+    buildBatchPrompt: overrides.buildBatchPrompt ?? config.buildBatchPrompt,
     providerOptions: {
       codex: {
         ...(config.providerOptions?.codex ?? {}),
@@ -101,6 +108,8 @@ export function parseCliArgs(args: string[]): {
       configFile = next();
     } else if (arg === "--provider") {
       overrides.provider = next() as ProviderName;
+    } else if (arg === "--evaluation-mode") {
+      overrides.evaluationMode = next() as "batch" | "scenario";
     } else if (arg === "--features") {
       overrides.features = next();
     } else if (arg === "--output-dir") {
@@ -129,6 +138,7 @@ Usage:
 Options:
   --config, -c     Config file
   --provider       Evaluator provider
+  --evaluation-mode batch or scenario
   --features       Feature directory or file
   --output-dir     Report output directory
   --cwd            Project working directory
