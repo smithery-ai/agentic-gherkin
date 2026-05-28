@@ -1,5 +1,6 @@
 import { createWriteStream } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { Writable } from "node:stream";
 import { randomUUID } from "node:crypto";
@@ -394,11 +395,12 @@ async function runNativeCucumber(
   config: ResolvedAgenticGherkinConfig,
   supportConfig: CucumberSupportConfig,
 ) {
+  const runCucumberWithProjectSupport = await loadProjectCucumberRunner(config.cwd);
   const eventLog = createWriteStream(config.eventLogFile);
   const files = reportFiles(config);
 
   try {
-    const result = await runCucumberApi(
+    const result = await runCucumberWithProjectSupport(
       {
         sources: cucumberSourceOptions(config, supportConfig),
         support: {
@@ -444,6 +446,24 @@ async function runNativeCucumber(
   } finally {
     eventLog.end();
   }
+}
+
+async function loadProjectCucumberRunner(cwd: string): Promise<typeof runCucumberApi> {
+  const projectRequire = createRequire(path.join(cwd, "package.json"));
+  let cucumberApiPath: string;
+  try {
+    cucumberApiPath = projectRequire.resolve("@cucumber/cucumber/api");
+  } catch (error) {
+    throw new Error(
+      `Native Cucumber support requires @cucumber/cucumber to be installed in ${cwd}.`,
+      { cause: error },
+    );
+  }
+
+  const cucumberApi = (await import(cucumberApiPath)) as {
+    runCucumber: typeof runCucumberApi;
+  };
+  return cucumberApi.runCucumber;
 }
 
 function buildSupportCodeLibrary(
